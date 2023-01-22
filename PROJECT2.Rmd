@@ -1,0 +1,329 @@
+---
+title: 'Project 2: Houses'
+author: "Erick Re"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Background
+Using data from the housing market in King County, Washington, we are going
+to build a suitable model that will help us explore what variables influence
+price of housing in King Country, as well as predict the prices of new houses 
+on the market for our client Jacob Kawalski. 
+
+
+# Loading and Exploring Data
+
+```{r}
+house <- read.csv("house_6.csv", header = TRUE)
+
+nrow(house)
+
+head(house)
+
+house <- house[-c(1)]
+
+head(house)
+
+unique(house$zipcode)
+
+nrow(house)
+
+sum(is.na(house))
+
+house <- na.omit(house)
+nrow(house)
+
+colnames(house)
+
+str(house)
+
+house$zipcode <- as.factor(house$zipcode)
+house$waterfront <- as.factor(house$waterfront)
+house$day_of_week <- as.factor(house$day_of_week)
+```
+
+## Correlation Matrix and Choosing Variables 
+```{r}
+library(corrgram)
+corrgram(house)
+```
+Based on the correlation matrix that we ran, the variables we are going to 
+further explore and utilize for our housing models will be number of bedrooms
+and bathrooms, square footage, number of views, grade, number of floors,
+and latitude. The correlation matrix displayed a strong correlation between these 
+variables and the listing price of houses in King County. 
+
+# Multiple linear Regression Models
+## Model 1:
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Selecting chosen variables
+house <- house[, c("bedrooms", "bathrooms", "sqft_living", "view", "grade",
+                      "lat", "floors", "yr_built", "sqft_lot", "price")]
+
+head(house)
+
+# Making integer variables into numeric. 
+house <- house %>% mutate_if(is.integer, as.numeric)
+
+str(house)
+
+# Changing "year built" into age for clearer understanding of effects on price
+# (Make age have a positive effect on price.)
+
+house["age"] <- 2022 - house$yr_built
+
+colnames(house)
+
+house <- house[,-c(8)]
+
+colnames(house)
+
+# Splitting Trianing and Validation Sets
+set.seed(666)
+
+train_index <- sample(1:nrow(house), 0.6 * nrow(house))
+valid_index <- setdiff(1:nrow(house), train_index)
+
+train_df_st <- house[train_index, ]
+valid_df_st <- house[valid_index, ]
+
+
+# Creating a multiple linear regression model
+price_model <- lm(price ~ .,
+                  data = train_df_st)
+summary(price_model)
+
+# Checking for multicollinearity in the training set
+library(car)
+vif(price_model)
+# None of the variables' VIFs show any high measures of multicollinearity, though
+# there seems to be some correlation between bathrooms and living square footage.
+
+
+# Model Evaluation
+library(forecast)
+price_model_pred_train <- predict(price_model,
+                                train_df_st)
+
+accuracy(price_model_pred_train, train_df_st$price)
+
+price_model_pred_valid <- predict(price_model,
+                                valid_df_st)
+
+accuracy(price_model_pred_valid, valid_df_st$price)
+
+```
+The model shows a promise in how much variation in the data is accounted for, with 
+an adjusted r-squared of 0.676. The room for error in the training model's 
+prediction for price is about $21,000. The room for error in the validation data
+set is about $18,000. Since there is a decrease in error from the training to 
+validation set, we are going to remove a variable that may be affecting the 
+model's prediction capability. 
+
+
+## Model 2: Removing Living Square Footage
+Our goal behind the removal of square footage of living space is to remove a 
+variable with a higher possibility of multicollinearity. As seen in the 
+correlation matrix, there is a high correlation between bathrooms and living space 
+square footage. Since we have a square footage measurement with lot size, we can
+afford to remove this variable while maintaining the number of bathrooms in the model. 
+```{r}
+colnames(house)
+
+# Making new data set for new model.
+house_2 <- house[,-c(3)]
+
+set.seed(666)
+
+train_index_2 <- sample(1:nrow(house_2), 0.6 * nrow(house_2))
+valid_index_2 <- setdiff(1:nrow(house_2), train_index_2)
+
+train_df_st_2 <- house_2[train_index_2, ]
+valid_df_st_2 <- house_2[valid_index_2, ]
+
+
+# Creating a multiple linear regression model
+price_model_2 <- lm(price ~ .,
+                  data = train_df_st_2)
+summary(price_model_2)
+
+# Checking for multicollinearity in the training set
+library(car)
+vif(price_model_2)
+# None of the variables' VIFs show any concerning multicollinearity. 
+
+
+# Model Evaluation
+library(forecast)
+price_model_pred_train_2 <- predict(price_model_2,
+                                train_df_st_2)
+
+accuracy(price_model_pred_train_2, train_df_st_2$price)
+
+price_model_pred_valid_2 <- predict(price_model_2,
+                                valid_df_st_2)
+
+accuracy(price_model_pred_valid_2, valid_df_st_2$price)
+```
+The possiblility for error in predicted price is higher in this second model, meaning
+that removing that variable may not have helped accuracy in the model. This can
+also be seen in the adjusted r-squared, which tells us that only about 61% of 
+variation in the data is accounted for by the model. However, this model's coefficients
+make more sense, meaning that more variables that should increase the price are 
+increasing the price instead of reducing it. 
+
+
+## Model 3: Removing Floors
+For this approach, we concluded that the number of floors variables may be affecting 
+the y-intercept because how the number of floors affects the price may be dependent 
+on the actual square footage of each, adding some nuiance to this variable.
+```{r}
+# Making new data set for new model.
+colnames(house_2)
+
+house_3 <- house_2[,-c(6)]
+
+set.seed(666)
+
+train_index_3 <- sample(1:nrow(house_3), 0.6 * nrow(house_3))
+valid_index_3 <- setdiff(1:nrow(house_3), train_index_3)
+
+train_df_st_3 <- house_3[train_index_3, ]
+valid_df_st_3 <- house_3[valid_index_3, ]
+
+
+# Creating a multiple linear regression model
+price_model_3 <- lm(price ~ .,
+                  data = train_df_st_3)
+summary(price_model_3)
+
+# Checking for multicollinearity in the training set
+library(car)
+vif(price_model_3)
+# None of the variables' VIFs show any concerning multicollinearity. 
+
+
+# Model Evaluation
+library(forecast)
+price_model_pred_train_3 <- predict(price_model_3,
+                                train_df_st_3)
+
+accuracy(price_model_pred_train_3, train_df_st_3$price)
+
+price_model_pred_valid_3 <- predict(price_model_3,
+                                valid_df_st_3)
+
+accuracy(price_model_pred_valid_3, valid_df_st_3$price)
+
+```
+Just like the second model, there is an increase in room for error and a decrease in
+variation accounted for by the model. However, the coefficients ad VIF scores show promise
+through their practicality(positive) and lowness, respectively. 
+
+# Hierarchical Clustering Models
+## Model 1:
+```{r}
+# Filtering the data for clustering
+summary(house_3)
+
+names(house_3)
+
+house_filter <- house
+
+names(house_filter)
+
+# Normalizing the data
+house_filter_norm <- sapply(house_filter, scale)
+head(house_filter_norm)
+
+
+# Clustering
+house_filter_norm_m_hc <- hclust(house_filter_norm_m, 
+                                  method = "ward.D2")
+plot(house_filter_norm_m_hc, hang = -100, ann = TRUE,
+     xlab = "", main = "King County Housing Price Clusters")
+
+# Checking cluster quality
+library(factoextra)
+fviz_nbclust(house_filter_norm, 
+             hcut, method = "silhouette") +
+  labs(subtitle = "")
+
+# Merging clusters with original data 
+names(house_3)
+
+house_filter_norm_m_hc_memb_4 <- cutree(house_filter_norm_m_hc, k=4)
+
+house_filter_norm_m_hc_memb_4
+
+house_filter_norm_m_hc_df <- as.data.frame(house_filter_norm_m_hc_memb_4)
+
+head(house_filter_norm_m_hc_df)
+
+names(house_filter_norm_m_hc_df)[1] <- "Cluster"
+
+tail(house_filter_norm_m_hc_df)
+
+table(house_filter_norm_m_hc_df$Cluster)
+
+house_w_cluster <- cbind(house_3, 
+                        house_filter_norm_m_hc_df)
+
+head(house_w_cluster)
+
+names(house_w_cluster)
+
+aggregate(house_3, 
+          by = house_w_cluster[9], FUN = mean)
+
+house_w_cluster_df <- aggregate(house_3, 
+                                by = house_w_cluster[9], FUN = mean)
+
+house_w_cluster_df
+
+
+```
+
+
+# Choosing the Best Models
+From the models we created for our client Jacob Kawalski, wedecided to choose two
+multiple linear regression models. Although the room for errors is slightly higher and 
+the amount of variation in the data accounted for is lower in our third model, this 
+model does exhibit positive and practical coefficients. Essentially, this means that with each house 
+attribute, there is a minimum price being predicted by the model, demonstrating 
+a potential for reasonable house price predictions. The other best model we chose, is
+the first one because of its higher accuracy. However, with this model, the 
+coefficients are not as practical as the first one. 
+
+
+
+# Predicting the Prices of New Houses With Our Chosen Models
+## Model 1: Multiple Linear Regression (3)
+```{r}
+# Using multiple linear regression
+new <- read.csv("house_test_6.csv", header = TRUE)
+
+new["age"] <- 2022 - new$yr_built
+
+new <- new[-c("yr_built")]
+
+price_model_3_pred_new <- predict(price_model_3,
+                                newdata = new, interval = "confidence")
+price_model_3_pred_new
+```
+
+## Model 2: Multiple Linear Regression (1)
+```{r}
+price_model_1_pred_new <- predict(price_model,
+                                newdata = new, interval = "confidence")
+price_model_1_pred_new
+```
+
+
